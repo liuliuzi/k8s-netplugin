@@ -1,0 +1,60 @@
+#!/bin/bash
+readonly  cmd=$1
+readonly  namespace=$2
+readonly  name=$3
+readonly  CID=$4
+readonly  vlanip=192.168.255.126/24
+readonly  k8s_br="k8s_br"
+vlantag=0
+
+getvlantag() {
+    string=$1
+    vlantag=${string%%-*}
+    echo "vlantag:" ${vlantag}
+}
+
+init() {
+    #make sure k8s_br exist
+    ovs-vsctl show|grep ${k8s_br}
+    if [ $? -eq 0 ]; then
+        exit 0
+    else
+        ovs-vsctl  add-br ${k8s_br}
+    fi
+}
+
+setup(){
+    #add veth
+    Podname=$2
+    ContainerID=$3
+    getvlantag ${Podname}
+    pipework ${k8s_br}  ${CID} ${vlanip} @${vlantag}
+}
+
+
+teardown() {
+    #clear veth
+    Podname=$2
+    ContainerID=$3
+    NSPID=$(docker inspect --format='{{ .State.Pid }}' "$ContainerID")
+    CONTAINER_IFNAME="eth1"
+    vethname="v${CONTAINER_IFNAME}pl${NSPID}"
+    ip link del ${vethname}
+    ovs-vsctl del-port  ${vethname}
+}
+
+getstatus(){
+    exit 0
+}
+
+
+case ${cmd} in
+    init)     init     ${namespace} ${name} ${CID} ;;
+    setup)    setup    ${namespace} ${name} ${CID} ;;
+    teardown) teardown ${namespace} ${name} ${CID} ;;
+    status)   getstatus   ${namespace} ${name} ${CID} ;;
+    *)
+        echo "$(basename $0): fatal: Unknown command '$1' " >&2
+        exit 2
+        ;;
+esac
